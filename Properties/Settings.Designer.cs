@@ -8,7 +8,7 @@
 // </auto-generated>
 //------------------------------------------------------------------------------
 
-namespace Screen_Dimmer.Properties
+namespace ScreenDimmer.Properties
 {
 
 
