@@ -53,12 +53,21 @@ namespace Screen_Dimmer
 
         private Label colorTempLabel;
         private TrackBar colorTempTrackBar;
-        private Panel colorGradientPanel;
+        private Panel colorTempGradientPanel;
         private Label coolLabel;
         private Label warmLabel;
 
+        // --- NEW: Blue Light Filter Controls ---
+        private Label blueLightLabel;
+        private TrackBar blueLightTrackBar;
+        private Panel blueLightGradientPanel;
+        private Label blueLightOffLabel;
+        private Label blueLightMaxLabel;
+
+        // Color constants for our sliders
         private static readonly Color CoolColor = Color.Black;
-        private static readonly Color WarmColor = Color.FromArgb(255, 140, 70);
+        private static readonly Color WarmColor = Color.FromArgb(255, 140, 70); // Warm sepia
+        private static readonly Color BlueFilterColor = Color.FromArgb(0, 50, 180); // Deep blue for filtering
 
         // (P/Invoke declarations for hotkeys are unchanged)
         private const int MOD_CONTROL = 0x0002;
@@ -95,18 +104,22 @@ namespace Screen_Dimmer
             this.presetNightButton = new Button();
             this.colorTempLabel = new Label();
             this.colorTempTrackBar = new TrackBar();
-            this.colorGradientPanel = new Panel();
+            this.colorTempGradientPanel = new Panel();
             this.coolLabel = new Label();
             this.warmLabel = new Label();
-
-            // --- NEW: Manually initialize the NotifyIcon, ContextMenu, and ToolTip ---
             this.notifyIcon = new NotifyIcon();
             this.trayMenu = new ContextMenuStrip();
             this.toolTip = new ToolTip();
+            // --- NEW ---
+            this.blueLightLabel = new Label();
+            this.blueLightTrackBar = new TrackBar();
+            this.blueLightGradientPanel = new Panel();
+            this.blueLightOffLabel = new Label();
+            this.blueLightMaxLabel = new Label();
 
-            // (Form Properties are unchanged)
+            // Form Properties - Increased height for the new slider
             this.Text = "Screen Dimmer";
-            this.ClientSize = new Size(320, 225);
+            this.ClientSize = new Size(320, 280);
             this.FormBorderStyle = FormBorderStyle.FixedSingle;
             this.MaximizeBox = false;
             this.StartPosition = FormStartPosition.CenterScreen;
@@ -122,7 +135,7 @@ namespace Screen_Dimmer
             this.brightnessTrackBar.TickFrequency = 10;
             this.brightnessTrackBar.ValueChanged += (s, e) => UpdateAllOverlays();
             // --- NEW: Assign a tooltip ---
-            this.toolTip.SetToolTip(this.brightnessTrackBar, "Adjust screen dimness level");
+            this.toolTip.SetToolTip(this.brightnessTrackBar, "Adjust Screen Dimness Level");
 
             this.percentageLabel.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
             this.percentageLabel.Location = new Point(140, 55);
@@ -167,9 +180,9 @@ namespace Screen_Dimmer
             this.colorTempTrackBar.TickStyle = TickStyle.None;
             this.colorTempTrackBar.ValueChanged += (s, e) => UpdateAllOverlays();
             this.toolTip.SetToolTip(this.colorTempTrackBar, "Adjust the warmth of the screen tint");
-            this.colorGradientPanel.Location = new Point(20, 177);
-            this.colorGradientPanel.Size = new Size(280, 8);
-            this.colorGradientPanel.Paint += ColorGradientPanel_Paint;
+            this.colorTempGradientPanel.Location = new Point(20, 177);
+            this.colorTempGradientPanel.Size = new Size(280, 8);
+            this.colorTempGradientPanel.Paint += ColorTempGradientPanel_Paint;
             this.coolLabel.Text = "Neutral";
             this.coolLabel.ForeColor = Color.Gray;
             this.coolLabel.Location = new Point(15, 195);
@@ -179,9 +192,36 @@ namespace Screen_Dimmer
             this.warmLabel.Location = new Point(265, 195);
             this.warmLabel.AutoSize = true;
 
+            // --- NEW: Blue Light Filter UI Setup ---
+            this.blueLightLabel.Text = "Blue Light Filter:";
+            this.blueLightLabel.Location = new Point(15, 215);
+            this.blueLightLabel.AutoSize = true;
+
+            this.blueLightTrackBar.Location = new Point(15, 230);
+            this.blueLightTrackBar.Size = new Size(290, 45);
+            this.blueLightTrackBar.Minimum = 0;
+            this.blueLightTrackBar.Maximum = 100;
+            this.blueLightTrackBar.TickStyle = TickStyle.None;
+            this.blueLightTrackBar.ValueChanged += (s, e) => UpdateAllOverlays();
+            this.toolTip.SetToolTip(this.blueLightTrackBar, "Increase the Blue Light filtering effect");
+
+            this.blueLightGradientPanel.Location = new Point(20, 237);
+            this.blueLightGradientPanel.Size = new Size(280, 8);
+            this.blueLightGradientPanel.Paint += BlueLightGradientPanel_Paint;
+
+            this.blueLightOffLabel.Text = "Off";
+            this.blueLightOffLabel.ForeColor = Color.Gray;
+            this.blueLightOffLabel.Location = new Point(15, 255);
+            this.blueLightOffLabel.AutoSize = true;
+
+            this.blueLightMaxLabel.Text = "Max";
+            this.blueLightMaxLabel.ForeColor = Color.Gray;
+            this.blueLightMaxLabel.Location = new Point(270, 255);
+            this.blueLightMaxLabel.AutoSize = true;
+
             this.infoLabel.Text = "Ctrl+↑/↓ to adjust | Ctrl+Shift+X to exit";
             this.infoLabel.ForeColor = Color.Gray;
-            this.infoLabel.Location = new Point(15, 200);
+            this.infoLabel.Location = new Point(15, 258);
             this.infoLabel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
 
             // --- NEW: Configure the System Tray Icon and Menu in code ---
@@ -204,10 +244,16 @@ namespace Screen_Dimmer
             this.Controls.Add(this.colorTempLabel);
             this.Controls.Add(this.coolLabel);
             this.Controls.Add(this.warmLabel);
-            this.Controls.Add(this.colorGradientPanel);
+            this.Controls.Add(this.colorTempGradientPanel);
             this.Controls.Add(this.colorTempTrackBar);
             this.Controls.Add(this.brightnessTrackBar);
             this.Controls.Add(this.infoLabel);
+            // --- NEW ---
+            this.Controls.Add(this.blueLightLabel);
+            this.Controls.Add(this.blueLightOffLabel);
+            this.Controls.Add(this.blueLightMaxLabel);
+            this.Controls.Add(this.blueLightGradientPanel);
+            this.Controls.Add(this.blueLightTrackBar);
 
             this.Resize += (s, e) => { if (WindowState == FormWindowState.Minimized) this.Hide(); };
         }
@@ -251,6 +297,7 @@ namespace Screen_Dimmer
         {
             brightnessTrackBar.Value = Settings.Default.LastBrightness;
             colorTempTrackBar.Value = Settings.Default.ColorTemperature;
+            blueLightTrackBar.Value = Settings.Default.BlueLightFilter; // --- NEW ---
             UpdateAllOverlays();
             try
             {
@@ -268,6 +315,7 @@ namespace Screen_Dimmer
 
             Settings.Default.LastBrightness = brightnessTrackBar.Value;
             Settings.Default.ColorTemperature = colorTempTrackBar.Value;
+            Settings.Default.BlueLightFilter = blueLightTrackBar.Value; // --- NEW ---
             Settings.Default.Save();
 
             UnregisterHotKey(this.Handle, 1);
@@ -279,13 +327,29 @@ namespace Screen_Dimmer
         private void UpdateAllOverlays()
         {
             double opacity = brightnessTrackBar.Value / 100.0;
-            Color tintColor = InterpolateColor(CoolColor, WarmColor, colorTempTrackBar.Value / 100.0);
+            Color tintColor = CalculateFinalColor(
+                colorTempTrackBar.Value / 100.0,
+                blueLightTrackBar.Value / 100.0);
 
             foreach (var form in dimmerForms)
             {
                 form.UpdateOverlay(tintColor, opacity);
             }
             percentageLabel.Text = $"{brightnessTrackBar.Value}%";
+        }
+
+        /// <summary>
+        /// --- MODIFIED: This function now blends both color effects together.
+        /// </summary>
+        private Color CalculateFinalColor(double tempFraction, double blueFraction)
+        {
+            // 1. Calculate the base warm/cool color from the temperature slider
+            Color tempColor = InterpolateColor(CoolColor, WarmColor, tempFraction);
+
+            // 2. Blend the temperature color with the blue filter color
+            Color finalColor = InterpolateColor(tempColor, BlueFilterColor, blueFraction);
+
+            return finalColor;
         }
 
         private Color InterpolateColor(Color color1, Color color2, double fraction)
@@ -305,9 +369,18 @@ namespace Screen_Dimmer
             }
         }
 
-        private void ColorGradientPanel_Paint(object sender, PaintEventArgs e)
+        private void ColorTempGradientPanel_Paint(object sender, PaintEventArgs e)
         {
             using (var brush = new LinearGradientBrush(e.ClipRectangle, CoolColor, WarmColor, LinearGradientMode.Horizontal))
+            {
+                e.Graphics.FillRectangle(brush, e.ClipRectangle);
+            }
+        }
+
+        private void BlueLightGradientPanel_Paint(object sender, PaintEventArgs e)
+        {
+            // This gradient shows the effect of the blue filter on a neutral background
+            using (var brush = new LinearGradientBrush(e.ClipRectangle, CoolColor, BlueFilterColor, LinearGradientMode.Horizontal))
             {
                 e.Graphics.FillRectangle(brush, e.ClipRectangle);
             }
@@ -343,7 +416,6 @@ namespace Screen_Dimmer
             base.WndProc(ref m);
         }
     }
-
 
     /// <summary>
     /// The overlay form that covers a single screen to create the dimming effect.
