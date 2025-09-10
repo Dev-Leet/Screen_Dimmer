@@ -37,13 +37,13 @@ Screen Dimmer is more than just a simple brightness tool. It's a robust applicat
 This project was built using Visual Studio and the .NET Framework.
 
 1. **Clone the Repository:**  
-   git clone https://github.com/Dev-Leet/Screen\_Dimmer  
-2. **Open in Visual Studio:** Open the Screen\_Dimmer.sln file in Visual Studio (2019 or later recommended).  
-3. **Select .NET Framework:** The project is configured to use **.NET Framework 4.8**. If you don't have it, Visual Studio should prompt you to install it.  
-4. **Build the Solution:**  
+   git clone https://github.com/Dev-Leet/Screen\_Dimmer.git  
+3. **Open in Visual Studio:** Open the Screen\_Dimmer.sln file in Visual Studio (2019 or later recommended).  
+4. **Select .NET Framework:** The project is configured to use **.NET Framework 4.8**. If you don't have it, Visual Studio should prompt you to install it.  
+5. **Build the Solution:**  
    * Go to the Build menu.  
    * Select Rebuild Solution.  
-5. **Run:** The final executable will be located in the bin/Debug or bin/Release folder inside the project directory.
+6. **Run:** The final executable will be located in the bin/Debug or bin/Release folder inside the project directory.
 
 ## **🛠️ Technology Stack**
 
