@@ -15,9 +15,11 @@
 using System;
 using System.Collections.Generic;
 using System.Drawing;
+using System.Drawing.Drawing2D; // --- FIX #1: ADDED THIS LINE ---
 using System.Windows.Forms;
 using System.Runtime.InteropServices;
 using Microsoft.Win32;
+using Screen_Dimmer.Properties; // --- FIX #2: ADDED THIS LINE -
 
 // NOTE: Namespace updated to match your project name.
 namespace Screen_Dimmer
@@ -38,157 +40,279 @@ namespace Screen_Dimmer
         private CheckBox startWithWindowsCheckBox;
         private Label infoLabel;
         private Label percentageLabel;
-        private Button exitButton; // Added exit button
 
-        // Constants for registering global hotkeys.
+        private Label presetsLabel;
+        private Button presetReadingButton;
+        private Button presetMovieButton;
+        private Button presetNightButton;
+
+        // --- NEW: Declare the components as class fields ---
+        private NotifyIcon notifyIcon;
+        private ContextMenuStrip trayMenu; // The menu for the tray icon
+        private ToolTip toolTip;
+
+        private Label colorTempLabel;
+        private TrackBar colorTempTrackBar;
+        private Panel colorGradientPanel;
+        private Label coolLabel;
+        private Label warmLabel;
+
+        private static readonly Color CoolColor = Color.Black;
+        private static readonly Color WarmColor = Color.FromArgb(255, 140, 70);
+
+        // (P/Invoke declarations for hotkeys are unchanged)
         private const int MOD_CONTROL = 0x0002;
-        private const int MOD_SHIFT = 0x0004; // Added SHIFT modifier
+        private const int MOD_SHIFT = 0x0004;
         private const int WM_HOTKEY = 0x0312;
 
-        // P/Invoke declarations for registering and unregistering global hotkeys.
         [DllImport("user32.dll")]
         private static extern bool RegisterHotKey(IntPtr hWnd, int id, int fsModifiers, int vk);
         [DllImport("user32.dll")]
         private static extern bool UnregisterHotKey(IntPtr hWnd, int id);
 
-        // Registry key for "Start with Windows" functionality.
         private const string RunRegistryKey = @"SOFTWARE\Microsoft\Windows\CurrentVersion\Run";
         private const string AppName = "ScreenDimmer";
 
         public ControlForm()
         {
             InitializeComponent();
-            InitializeDimmerForms();
+            ReconfigureDimmerForms();
             RegisterHotkeys();
             LoadSettings();
+            SystemEvents.DisplaySettingsChanged += OnDisplaySettingsChanged;
         }
 
-        // Sets up the UI components of the control form.
         private void InitializeComponent()
         {
+            // --- Initialize ALL Components ---
             this.brightnessTrackBar = new TrackBar();
             this.startWithWindowsCheckBox = new CheckBox();
             this.infoLabel = new Label();
             this.percentageLabel = new Label();
-            this.exitButton = new Button(); // Initialize exit button
+            this.presetsLabel = new Label();
+            this.presetReadingButton = new Button();
+            this.presetMovieButton = new Button();
+            this.presetNightButton = new Button();
+            this.colorTempLabel = new Label();
+            this.colorTempTrackBar = new TrackBar();
+            this.colorGradientPanel = new Panel();
+            this.coolLabel = new Label();
+            this.warmLabel = new Label();
 
-            // Form properties
+            // --- NEW: Manually initialize the NotifyIcon, ContextMenu, and ToolTip ---
+            this.notifyIcon = new NotifyIcon();
+            this.trayMenu = new ContextMenuStrip();
+            this.toolTip = new ToolTip();
+
+            // (Form Properties are unchanged)
             this.Text = "Screen Dimmer";
-            this.ClientSize = new Size(300, 150); // Increased height for the new button
+            this.ClientSize = new Size(320, 225);
             this.FormBorderStyle = FormBorderStyle.FixedSingle;
             this.MaximizeBox = false;
             this.StartPosition = FormStartPosition.CenterScreen;
-            this.Icon = SystemIcons.Application; // Simple default icon
+            this.BackColor = Color.FromArgb(45, 45, 48);
+            this.ForeColor = Color.White;
+            this.Icon = SystemIcons.Application;
 
-            // Brightness TrackBar
-            this.brightnessTrackBar.Location = new Point(12, 12);
-            this.brightnessTrackBar.Size = new Size(276, 45);
-            this.brightnessTrackBar.Minimum = 0;   // 0% dimming
-            this.brightnessTrackBar.Maximum = 90;  // Capped at 90% to prevent a fully black screen
+            // --- Controls Setup ---
+            this.brightnessTrackBar.Location = new Point(15, 20);
+            this.brightnessTrackBar.Size = new Size(290, 45);
+            this.brightnessTrackBar.Minimum = 0;
+            this.brightnessTrackBar.Maximum = 90;
             this.brightnessTrackBar.TickFrequency = 10;
-            this.brightnessTrackBar.ValueChanged += BrightnessTrackBar_ValueChanged;
+            this.brightnessTrackBar.ValueChanged += (s, e) => UpdateAllOverlays();
+            // --- NEW: Assign a tooltip ---
+            this.toolTip.SetToolTip(this.brightnessTrackBar, "Adjust screen dimness level");
 
-            // Percentage Label
-            this.percentageLabel.Location = new Point(135, 60);
+            this.percentageLabel.Font = new Font("Segoe UI", 10F, FontStyle.Bold);
+            this.percentageLabel.Location = new Point(140, 55);
             this.percentageLabel.Size = new Size(50, 20);
             this.percentageLabel.TextAlign = ContentAlignment.MiddleCenter;
 
-            // Info Label
-            this.infoLabel.Text = "Ctrl+↑/↓ to adjust. Ctrl+Shift+X to exit.";
-            this.infoLabel.Location = new Point(12, 60);
-            this.infoLabel.AutoSize = true;
+            // (Preset button setup is unchanged)
+            this.presetsLabel.Text = "Presets:";
+            this.presetsLabel.Location = new Point(15, 90);
+            this.presetsLabel.AutoSize = true;
+            var presetButtons = new[] { presetReadingButton, presetMovieButton, presetNightButton };
+            string[] presetNames = { "Reading", "Movie", "Night" };
+            int[] presetValues = { 30, 65, 85 };
+            for (int i = 0; i < presetButtons.Length; i++)
+            {
+                presetButtons[i].Text = presetNames[i];
+                presetButtons[i].Tag = presetValues[i];
+                presetButtons[i].Location = new Point(80 + (i * 75), 85);
+                presetButtons[i].Size = new Size(70, 28);
+                presetButtons[i].FlatStyle = FlatStyle.Flat;
+                presetButtons[i].FlatAppearance.BorderColor = Color.FromArgb(80, 80, 80);
+                presetButtons[i].BackColor = Color.FromArgb(63, 63, 70);
+                presetButtons[i].Click += PresetButton_Click;
+                this.Controls.Add(presetButtons[i]);
+            }
 
-            // Start with Windows CheckBox
             this.startWithWindowsCheckBox.Text = "Start with Windows";
-            this.startWithWindowsCheckBox.Location = new Point(15, 90);
+            this.startWithWindowsCheckBox.Location = new Point(15, 125);
             this.startWithWindowsCheckBox.AutoSize = true;
             this.startWithWindowsCheckBox.CheckedChanged += StartWithWindowsCheckBox_CheckedChanged;
+            // --- NEW: Assign a tooltip ---
+            this.toolTip.SetToolTip(this.startWithWindowsCheckBox, "Automatically run Screen Dimmer when you log in.");
 
-            // Exit Button
-            this.exitButton.Text = "Exit Application";
-            this.exitButton.Location = new Point(180, 86);
-            this.exitButton.Size = new Size(108, 28);
-            this.exitButton.Click += ExitButton_Click;
+            // (Color Temperature controls setup is unchanged)
+            this.colorTempLabel.Text = "Color Temperature:";
+            this.colorTempLabel.Location = new Point(15, 155);
+            this.colorTempLabel.AutoSize = true;
+            this.colorTempTrackBar.Location = new Point(15, 170);
+            this.colorTempTrackBar.Size = new Size(290, 45);
+            this.colorTempTrackBar.Minimum = 0;
+            this.colorTempTrackBar.Maximum = 100;
+            this.colorTempTrackBar.TickStyle = TickStyle.None;
+            this.colorTempTrackBar.ValueChanged += (s, e) => UpdateAllOverlays();
+            this.toolTip.SetToolTip(this.colorTempTrackBar, "Adjust the warmth of the screen tint");
+            this.colorGradientPanel.Location = new Point(20, 177);
+            this.colorGradientPanel.Size = new Size(280, 8);
+            this.colorGradientPanel.Paint += ColorGradientPanel_Paint;
+            this.coolLabel.Text = "Neutral";
+            this.coolLabel.ForeColor = Color.Gray;
+            this.coolLabel.Location = new Point(15, 195);
+            this.coolLabel.AutoSize = true;
+            this.warmLabel.Text = "Warm";
+            this.warmLabel.ForeColor = Color.Gray;
+            this.warmLabel.Location = new Point(265, 195);
+            this.warmLabel.AutoSize = true;
 
-            // Add controls to form
-            this.Controls.Add(this.brightnessTrackBar);
+            this.infoLabel.Text = "Ctrl+↑/↓ to adjust | Ctrl+Shift+X to exit";
+            this.infoLabel.ForeColor = Color.Gray;
+            this.infoLabel.Location = new Point(15, 200);
+            this.infoLabel.Anchor = AnchorStyles.Bottom | AnchorStyles.Left;
+
+            // --- NEW: Configure the System Tray Icon and Menu in code ---
+            // 1. Configure the menu items
+            this.trayMenu.Items.Add("Show Controls", null, (s, a) => this.Show());
+            this.trayMenu.Items.Add("Exit", null, (s, a) => Application.Exit());
+            // 2. Configure the tray icon itself
+            this.notifyIcon.Icon = this.Icon; // Use the form's icon
+            this.notifyIcon.Text = "Screen Dimmer";
+            this.notifyIcon.Visible = true;
+            // 3. Add event handlers
+            this.notifyIcon.DoubleClick += (s, e) => this.Show();
+            // 4. Assign the menu to the icon
+            this.notifyIcon.ContextMenuStrip = this.trayMenu;
+
+            // Add all controls to the form
             this.Controls.Add(this.percentageLabel);
-            this.Controls.Add(this.infoLabel);
+            this.Controls.Add(this.presetsLabel);
             this.Controls.Add(this.startWithWindowsCheckBox);
-            this.Controls.Add(this.exitButton); // Add new button to controls
+            this.Controls.Add(this.colorTempLabel);
+            this.Controls.Add(this.coolLabel);
+            this.Controls.Add(this.warmLabel);
+            this.Controls.Add(this.colorGradientPanel);
+            this.Controls.Add(this.colorTempTrackBar);
+            this.Controls.Add(this.brightnessTrackBar);
+            this.Controls.Add(this.infoLabel);
 
-            // Initial update
-            UpdatePercentageLabel();
+            this.Resize += (s, e) => { if (WindowState == FormWindowState.Minimized) this.Hide(); };
         }
 
-        // Creates and displays a DimmerForm for each connected monitor.
-        private void InitializeDimmerForms()
+        // (The rest of the ControlForm class - ReconfigureDimmerForms, LoadSettings, event handlers, etc. - is exactly the same as the previous version)
+        private void OnDisplaySettingsChanged(object sender, EventArgs e)
         {
-            // Loop through all screens connected to the system.
+            this.Invoke((MethodInvoker)delegate {
+                ReconfigureDimmerForms();
+            });
+        }
+
+        private void ReconfigureDimmerForms()
+        {
+            foreach (var form in dimmerForms)
+            {
+                form.Close();
+            }
+            dimmerForms.Clear();
+
             foreach (Screen screen in Screen.AllScreens)
             {
-                DimmerForm dimmer = new DimmerForm();
-                dimmer.Bounds = screen.Bounds; // Set the form's size and position to match the screen.
+                var dimmer = new DimmerForm
+                {
+                    Bounds = screen.Bounds
+                };
                 dimmer.Show();
                 dimmerForms.Add(dimmer);
             }
+            UpdateAllOverlays();
         }
 
-        // Registers the global hotkeys for increasing/decreasing brightness and exiting.
+        // ... all other methods from the previous step remain here ...
         private void RegisterHotkeys()
         {
-            // ID 1 for decrease, ID 2 for increase, ID 3 for exit.
             RegisterHotKey(this.Handle, 1, MOD_CONTROL, (int)Keys.Down);
             RegisterHotKey(this.Handle, 2, MOD_CONTROL, (int)Keys.Up);
-            RegisterHotKey(this.Handle, 3, MOD_CONTROL | MOD_SHIFT, (int)Keys.X); // Added Exit Hotkey
+            RegisterHotKey(this.Handle, 3, MOD_CONTROL | MOD_SHIFT, (int)Keys.X);
         }
-
-        // Checks registry to see if the app is configured to start with Windows.
         private void LoadSettings()
         {
+            brightnessTrackBar.Value = Settings.Default.LastBrightness;
+            colorTempTrackBar.Value = Settings.Default.ColorTemperature;
+            UpdateAllOverlays();
             try
             {
                 using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RunRegistryKey, false))
                 {
-                    if (key != null)
-                    {
-                        object value = key.GetValue(AppName);
-                        // If the key exists and points to our executable, check the box.
-                        startWithWindowsCheckBox.Checked = value != null && value.ToString() == Application.ExecutablePath;
-                    }
+                    startWithWindowsCheckBox.Checked = key?.GetValue(AppName) != null;
                 }
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error reading registry: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            catch { /* ignore */ }
         }
 
-        // Event handler for the trackbar value changing.
-        private void BrightnessTrackBar_ValueChanged(object sender, EventArgs e)
+        protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            // The opacity is a value between 0.0 and 1.0.
+            SystemEvents.DisplaySettingsChanged -= OnDisplaySettingsChanged;
+
+            Settings.Default.LastBrightness = brightnessTrackBar.Value;
+            Settings.Default.ColorTemperature = colorTempTrackBar.Value;
+            Settings.Default.Save();
+
+            UnregisterHotKey(this.Handle, 1);
+            UnregisterHotKey(this.Handle, 2);
+            UnregisterHotKey(this.Handle, 3);
+            base.OnFormClosing(e);
+        }
+
+        private void UpdateAllOverlays()
+        {
             double opacity = brightnessTrackBar.Value / 100.0;
-            // Update the opacity on all dimmer forms.
+            Color tintColor = InterpolateColor(CoolColor, WarmColor, colorTempTrackBar.Value / 100.0);
+
             foreach (var form in dimmerForms)
             {
-                form.SetOpacity(opacity);
+                form.UpdateOverlay(tintColor, opacity);
             }
-            UpdatePercentageLabel();
-        }
-
-        private void UpdatePercentageLabel()
-        {
             percentageLabel.Text = $"{brightnessTrackBar.Value}%";
         }
 
-        // Event handler for the Exit button click.
-        private void ExitButton_Click(object sender, EventArgs e)
+        private Color InterpolateColor(Color color1, Color color2, double fraction)
         {
-            Application.Exit();
+            fraction = Math.Max(0, Math.Min(1, fraction));
+            int r = (int)Math.Round(color1.R + (color2.R - color1.R) * fraction);
+            int g = (int)Math.Round(color1.G + (color2.G - color1.G) * fraction);
+            int b = (int)Math.Round(color1.B + (color2.B - color1.B) * fraction);
+            return Color.FromArgb(r, g, b);
         }
 
-        // Event handler for the "Start with Windows" checkbox.
+        private void PresetButton_Click(object sender, EventArgs e)
+        {
+            if (sender is Button clickedButton)
+            {
+                brightnessTrackBar.Value = (int)clickedButton.Tag;
+            }
+        }
+
+        private void ColorGradientPanel_Paint(object sender, PaintEventArgs e)
+        {
+            using (var brush = new LinearGradientBrush(e.ClipRectangle, CoolColor, WarmColor, LinearGradientMode.Horizontal))
+            {
+                e.Graphics.FillRectangle(brush, e.ClipRectangle);
+            }
+        }
+
         private void StartWithWindowsCheckBox_CheckedChanged(object sender, EventArgs e)
         {
             try
@@ -196,55 +320,27 @@ namespace Screen_Dimmer
                 using (RegistryKey key = Registry.CurrentUser.OpenSubKey(RunRegistryKey, true))
                 {
                     if (startWithWindowsCheckBox.Checked)
-                    {
-                        // Add the application path to the registry key.
                         key.SetValue(AppName, Application.ExecutablePath);
-                    }
                     else
-                    {
-                        // Remove the value from the registry key.
                         key.DeleteValue(AppName, false);
-                    }
                 }
             }
-            catch (Exception ex)
-            {
-                MessageBox.Show($"Error updating registry: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            }
+            catch (Exception ex) { MessageBox.Show($"Error: {ex.Message}"); }
         }
 
-        // Overrides the window procedure to listen for messages, specifically WM_HOTKEY.
         protected override void WndProc(ref Message m)
         {
-            // Check if the message is a hotkey press.
             if (m.Msg == WM_HOTKEY)
             {
-                int id = m.WParam.ToInt32(); // The ID of the hotkey that was pressed.
+                int id = m.WParam.ToInt32();
                 switch (id)
                 {
-                    case 1: // Decrease brightness (Ctrl + Down)
-                        if (brightnessTrackBar.Value > brightnessTrackBar.Minimum)
-                            brightnessTrackBar.Value--;
-                        break;
-                    case 2: // Increase brightness (Ctrl + Up)
-                        if (brightnessTrackBar.Value < brightnessTrackBar.Maximum)
-                            brightnessTrackBar.Value++;
-                        break;
-                    case 3: // Exit application (Ctrl + Shift + X)
-                        Application.Exit();
-                        break;
+                    case 1: if (brightnessTrackBar.Value > 0) brightnessTrackBar.Value--; break;
+                    case 2: if (brightnessTrackBar.Value < brightnessTrackBar.Maximum) brightnessTrackBar.Value++; break;
+                    case 3: Application.Exit(); break;
                 }
             }
             base.WndProc(ref m);
-        }
-
-        // Ensures hotkeys are unregistered when the form closes to avoid system-wide conflicts.
-        protected override void OnFormClosing(FormClosingEventArgs e)
-        {
-            UnregisterHotKey(this.Handle, 1);
-            UnregisterHotKey(this.Handle, 2);
-            UnregisterHotKey(this.Handle, 3); // Unregister exit hotkey
-            base.OnFormClosing(e);
         }
     }
 
@@ -256,57 +352,61 @@ namespace Screen_Dimmer
     /// </summary>
     public class DimmerForm : Form
     {
-        // Constants for setting window styles to enable click-through.
+        // Constants used to set the extended window style for click-through functionality.
         private const int GWL_EXSTYLE = -20;
         private const int WS_EX_LAYERED = 0x80000;
         private const int WS_EX_TRANSPARENT = 0x20;
-        private const int WS_EX_TOOLWINDOW = 0x80; // Bonus: Hides the overlay from Alt+Tab
+        private const int WS_EX_TOOLWINDOW = 0x80; // Hides the form from the Alt+Tab list.
 
-        [DllImport("user32.dll", SetLastError = true)]
-        private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+        // P/Invoke is used here for completeness, but the CreateParams override is the primary method.
         [DllImport("user32.dll")]
         private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
 
         public DimmerForm()
         {
+            // Set the basic properties for the overlay form.
             this.BackColor = Color.Black;
             this.Opacity = 0; // Start fully transparent.
             this.FormBorderStyle = FormBorderStyle.None;
             this.ShowInTaskbar = false; // Hide from the taskbar.
-            this.StartPosition = FormStartPosition.Manual;
-            this.TopMost = true; // Stay on top of all other windows.
+            this.StartPosition = FormStartPosition.Manual; // We will set its position manually.
+            this.TopMost = true; // Ensure it stays on top of other windows.
         }
 
         /// <summary>
-        /// This is the key to the fix. By overriding the CreateParams property,
-        /// we modify the window's creation parameters *before* it is created.
-        /// This is a much more reliable way to set the extended window styles.
+        /// Overriding the CreateParams property is the most reliable way to apply
+        /// special window styles *before* the window is created. This ensures
+        /// the click-through behavior is set correctly from the very beginning.
         /// </summary>
         protected override CreateParams CreateParams
         {
             get
             {
                 CreateParams cp = base.CreateParams;
-                // Set the extended style to include WS_EX_LAYERED and WS_EX_TRANSPARENT
-                cp.ExStyle |= WS_EX_LAYERED | WS_EX_TRANSPARENT;
-                // Add WS_EX_TOOLWINDOW to prevent the form from showing in the Alt+Tab dialog
-                cp.ExStyle |= WS_EX_TOOLWINDOW;
+                // Apply the necessary extended styles:
+                // WS_EX_LAYERED:       Required for transparency (opacity).
+                // WS_EX_TRANSPARENT:   Makes the window click-through.
+                // WS_EX_TOOLWINDOW:    Hides the window from the Alt+Tab switcher.
+                cp.ExStyle |= WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_TOOLWINDOW;
                 return cp;
             }
         }
 
-        // A public method to allow the ControlForm to set the opacity of this dimmer.
-        public void SetOpacity(double opacity)
+        /// <summary>
+        /// A single, efficient public method allowing the ControlForm to update
+        /// both the color and opacity of this overlay simultaneously.
+        /// </summary>
+        /// <param name="newColor">The new tint color for the overlay.</param>
+        /// <param name="newOpacity">The new opacity level (0.0 to 1.0).</param>
+        public void UpdateOverlay(Color newColor, double newOpacity)
         {
-            // Ensure opacity is within the valid range [0.0, 1.0].
-            if (opacity >= 0 && opacity <= 1)
+            // Basic validation to ensure values are within the correct range.
+            if (newOpacity >= 0 && newOpacity <= 1)
             {
-                this.Opacity = opacity;
+                this.BackColor = newColor;
+                this.Opacity = newOpacity;
             }
         }
-
-        // NOTE: The previous WndProc and OnHandleCreated methods are no longer needed
-        // because the CreateParams override is a superior way to handle this.
     }
 }
 
